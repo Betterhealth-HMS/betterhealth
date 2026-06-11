@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"c:/projects/betterhealth/src/app/actions\" && mkdir -p \"c:/projects/betterhealth/src/app/\\(main\\)/queue\" && mkdir -p \"c:/projects/betterhealth/src/app/\\(main\\)/visits/[id]\" && mkdir -p \"c:/projects/betterhealth/src/app/\\(main\\)/facility\" && mkdir -p \"c:/projects/betterhealth/src/app/\\(main\\)/inventory\")",
+      "Bash(npx tsc *)"
+    ],
+    "additionalDirectories": [
+      "c:\\projects\\betterhealth\\src\\app\\(main)\\visits"
+    ]
+  }
+}
