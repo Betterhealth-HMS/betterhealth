@@ -145,7 +145,7 @@ export default function AnalyticsCharts({ weeklyData, stageData, typeData, waitD
                 <XAxis type="number" tick={{ fontSize: 11, fill: "#475569" }} axisLine={false} tickLine={false} tickFormatter={fmtMin} />
                 <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: "#475569" }} axisLine={false} tickLine={false} width={80} />
                 <Tooltip
-                  formatter={(v: number) => [`${Math.round(v)} min`, "Avg wait"]}
+                  formatter={(v) => [`${Math.round(Number(v))} min`, "Avg wait"]}
                   contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
                   cursor={{ fill: "#f0f7ff" }}
                 />
