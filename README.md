@@ -1,6 +1,6 @@
-# BetterHealth — Occupational Health Clinic HMS
+# BetterHealth — Occupational Health HMS
 
-A full-stack Health Management System built for a single-branch Occupational Health (OccHealth) clinic. Manages the complete patient journey from reception check-in through triage, laboratory, consultation, pharmacy, and discharge — with real-time queue management, role-based access control, analytics, and daily audit checklists.
+A full-stack Health Management System built for a single-branch Occupational Health (OccHealth) Hospital. Manages the complete patient journey from reception check-in through triage, laboratory, consultation, pharmacy, and discharge — with real-time queue management, role-based access control, analytics, and daily audit checklists.
 
 ---
 
