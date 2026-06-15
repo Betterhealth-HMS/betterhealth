@@ -261,6 +261,23 @@ export interface Database {
         Insert: Omit<Database["public"]["Tables"]["shift_handovers"]["Row"], "id" | "created_at" | "handover_time">;
         Update: Partial<Database["public"]["Tables"]["shift_handovers"]["Insert"]>;
       };
+      checklist_templates: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          category: string;
+          shift_type: string;
+          items: { text: string; required: boolean }[];
+          is_active: boolean;
+          sort_order: number;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["checklist_templates"]["Row"], "id" | "created_at" | "updated_at">;
+        Update: Partial<Database["public"]["Tables"]["checklist_templates"]["Insert"]>;
+      };
       audit_checklists: {
         Row: {
           id: string;
@@ -272,6 +289,9 @@ export interface Database {
           completed_by: string | null;
           completed_at: string | null;
           notes: string | null;
+          template_id: string | null;
+          acknowledged_by: string | null;
+          acknowledged_at: string | null;
           created_by: string | null;
           created_at: string;
         };
@@ -289,3 +309,5 @@ export type ChecklistItem = {
   checked: boolean;
   notes?: string;
 };
+
+export type ChecklistTemplateRow = Database["public"]["Tables"]["checklist_templates"]["Row"];

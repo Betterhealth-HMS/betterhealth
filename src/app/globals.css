@@ -1,41 +1,40 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Brand — Medical Blue (Option A) */
-  --color-primary: #2563eb;
-  --color-primary-container: #1d4ed8;
-  --color-on-primary: #ffffff;
-  --color-primary-100: #dbeafe;
+  /* Primary — Authoritative Clinical Blue */
+  --color-primary:           #1d4ed8;
+  --color-primary-container: #1e40af;
+  --color-on-primary:        #ffffff;
+  --color-primary-100:       #dbeafe;
+  --color-primary-50:        #eff6ff;
 
-  /* Sidebar / dark elements (Option A) */
-  --color-navy: #0f172a;
-  --color-navy-dim: #1e293b;
+  /* App Shell */
+  --color-navy:     #071221;
+  --color-navy-dim: #0d1e35;
 
-  /* Secondary — Cyan accent */
-  --color-secondary: #0891b2;
+  /* Accents */
+  --color-secondary:    #0284c7;
   --color-on-secondary: #ffffff;
+  --color-teal:         #0d9488;
 
-  /* Teal — warm accent (Option B) */
-  --color-teal: #0d9488;
-
-  /* Surfaces — warm blue-tinted white (Option B) */
-  --color-surface: #f0f7ff;
-  --color-surface-dim: #d4e5ff;
-  --color-surface-container-low: #e8f1ff;
-  --color-surface-container: #ddeeff;
-  --color-surface-container-high: #c8e2ff;
+  /* Surfaces — pure clinical gray-white, no blue cast */
+  --color-surface:               #f0f7ff;
+  --color-surface-dim:           #e8edf4;
+  --color-surface-container-low: #f8fafc;
+  --color-surface-container:     #f1f5f9;
+  --color-surface-container-high:#e2e8f0;
 
   /* Text */
-  --color-on-surface: #0f172a;
+  --color-on-surface:         #0f172a;
   --color-on-surface-variant: #475569;
 
   /* Borders */
-  --color-outline: #94a3b8;
+  --color-outline:         #94a3b8;
   --color-outline-variant: #e2e8f0;
 
   /* Semantic */
-  --color-error: #dc2626;
-  --color-error-container: #fee2e2;
+  --color-error:              #dc2626;
+  --color-error-container:    #fef2f2;
   --color-on-error-container: #991b1b;
 
   /* Fonts */
@@ -43,17 +42,15 @@
   --font-mono: var(--font-jetbrains-mono);
 }
 
-:root {
-  color-scheme: light;
-}
+:root { color-scheme: light; }
 
 body {
   background: var(--color-surface);
-  color: var(--color-on-surface);
+  color:      var(--color-on-surface);
 }
 
-/* Clinical scrollbars */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--color-surface-container-low); }
-::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-outline); }
+/* Precise scrollbars */
+::-webkit-scrollbar          { width: 5px; height: 5px; }
+::-webkit-scrollbar-track    { background: transparent; }
+::-webkit-scrollbar-thumb    { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

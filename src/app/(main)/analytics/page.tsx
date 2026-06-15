@@ -12,18 +12,20 @@ function dayLabel(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
-function avgMin(timestamps: Array<[string | null, string | null]>): number {
-  const valid = timestamps.filter(([a, b]) => a && b).map(([a, b]) =>
-    (new Date(b!).getTime() - new Date(a!).getTime()) / 60000
-  );
-  if (!valid.length) return 0;
-  return valid.reduce((s, v) => s + v, 0) / valid.length;
+function diffMin(a: string | null, b: string | null): number | null {
+  if (!a || !b) return null;
+  const diff = (new Date(b).getTime() - new Date(a).getTime()) / 60000;
+  return diff < 0 ? null : Math.round(diff);
+}
+
+function fmtMin(n: number | null) {
+  if (n === null) return "—";
+  return `${n}m`;
 }
 
 export default async function AnalyticsPage() {
   const supabase = await createClient();
 
-  // Role guard — manager/admin only
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
@@ -32,60 +34,69 @@ export default async function AnalyticsPage() {
     .select("role")
     .eq("id", user.id)
     .single();
-  const profile  = profileData as Pick<ProfileRow, "role"> | null;
-  const role     = profile?.role ?? "receptionist";
+  const profile = profileData as Pick<ProfileRow, "role"> | null;
+  const role    = profile?.role ?? "receptionist";
 
   if (!["manager", "admin"].includes(role)) redirect("/dashboard");
 
-  // Date range: last 7 days
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   const todayStart   = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const todayStr = todayStart.toISOString().split("T")[0];
 
-  const [{ data: weekVisitsRaw }, { data: todayVisitsRaw }, { data: inventoryRaw }] = await Promise.all([
+  const [
+    { data: weekVisitsRaw },
+    { data: todayVisitsRaw },
+    { data: inventoryRaw },
+    { data: breakdownRaw },
+  ] = await Promise.all([
     supabase
       .from("visits")
-      .select("registered_at, status, visit_type, triage_started_at, consultation_started_at, pharmacy_sent_at, completed_at")
+      .select("registered_at, status, visit_type")
       .gte("registered_at", sevenDaysAgo.toISOString()),
     supabase
       .from("visits")
-      .select("status, priority, registered_at")
+      .select("status, priority, registered_at, completed_at")
       .gte("registered_at", todayStart.toISOString())
       .not("status", "eq", "cancelled"),
-    supabase.from("inventory").select("current_stock, reorder_level"),
+    supabase
+      .from("inventory")
+      .select("current_stock, reorder_level"),
+    supabase
+      .from("visits")
+      .select("visit_number, registered_at, triage_started_at, consultation_started_at, pharmacy_sent_at, completed_at, patients(full_name)")
+      .gte("registered_at", todayStart.toISOString())
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false }),
   ]);
 
   const weekVisits  = (weekVisitsRaw  ?? []) as any[];
   const todayVisits = (todayVisitsRaw ?? []) as any[];
   const inventory   = (inventoryRaw   ?? []) as any[];
+  const breakdown   = (breakdownRaw   ?? []) as any[];
 
-  // ── Summary metrics ─────────────────────────────────────────────────────────
-  const totalToday       = todayVisits.length;
-  const completedToday   = todayVisits.filter(v => v.status === "completed").length;
-  const activeNow        = todayVisits.filter(v => !["completed", "cancelled"].includes(v.status)).length;
-  const completionRate   = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
-  const emergencyToday   = todayVisits.filter(v => v.priority === "emergency").length;
-  const lowStockCount    = inventory.filter((i: any) => i.current_stock <= i.reorder_level).length;
+  // ── Summary metrics ──────────────────────────────────────────────────────
+  const totalToday     = todayVisits.length;
+  const completedToday = todayVisits.filter(v => v.status === "completed").length;
+  const activeNow      = todayVisits.filter(v => !["completed", "cancelled"].includes(v.status)).length;
+  const completionRate = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
+  const emergencyToday = todayVisits.filter(v => v.priority === "emergency").length;
+  const lowStockCount  = inventory.filter((i: any) => i.current_stock <= i.reorder_level).length;
 
-  const weekTotal      = weekVisits.length;
-  const weekCompleted  = weekVisits.filter(v => v.status === "completed").length;
-  const completedVisits = weekVisits.filter(v => v.status === "completed");
+  const weekTotal     = weekVisits.length;
+  const weekCompleted = weekVisits.filter(v => v.status === "completed").length;
 
-  // Avg visit duration (registered_at → completed_at) for completed this week
   const avgVisitMin = (() => {
-    const valid = completedVisits
-      .filter((v: any) => v.completed_at)
+    const valid = todayVisits
+      .filter((v: any) => v.status === "completed" && v.completed_at)
       .map((v: any) => (new Date(v.completed_at).getTime() - new Date(v.registered_at).getTime()) / 60000);
     return valid.length ? Math.round(valid.reduce((s: number, v: number) => s + v, 0) / valid.length) : 0;
   })();
 
-  // ── 7-day bar chart data ─────────────────────────────────────────────────────
+  // ── 7-day bar chart ────────────────────────────────────────────────────────
   const weeklyMap: Record<string, { total: number; completed: number }> = {};
   for (let i = 6; i >= 0; i--) {
     const d = new Date(Date.now() - i * 24 * 3600 * 1000);
-    const key = d.toISOString().split("T")[0];
-    weeklyMap[key] = { total: 0, completed: 0 };
+    weeklyMap[d.toISOString().split("T")[0]] = { total: 0, completed: 0 };
   }
   for (const v of weekVisits) {
     const key = (v.registered_at as string).split("T")[0];
@@ -94,12 +105,9 @@ export default async function AnalyticsPage() {
       if (v.status === "completed") weeklyMap[key].completed++;
     }
   }
-  const weeklyData = Object.entries(weeklyMap).map(([date, d]) => ({
-    date: dayLabel(date),
-    ...d,
-  }));
+  const weeklyData = Object.entries(weeklyMap).map(([date, d]) => ({ date: dayLabel(date), ...d }));
 
-  // ── Current stage pipeline (today) ──────────────────────────────────────────
+  // ── Stage pipeline (today) ─────────────────────────────────────────────────
   const stageData = [
     { stage: "Registered",   count: todayVisits.filter(v => v.status === "registered").length   },
     { stage: "Triage",       count: todayVisits.filter(v => v.status === "triage").length       },
@@ -109,7 +117,7 @@ export default async function AnalyticsPage() {
     { stage: "Completed",    count: completedToday                                               },
   ];
 
-  // ── Visit type breakdown (7 days) ───────────────────────────────────────────
+  // ── Visit type breakdown (7 days) ─────────────────────────────────────────
   const typeMap: Record<string, number> = {};
   for (const v of weekVisits) {
     const t = (v.visit_type as string).replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
@@ -117,22 +125,33 @@ export default async function AnalyticsPage() {
   }
   const typeData = Object.entries(typeMap).map(([name, value]) => ({ name, value }));
 
-  // ── Avg wait per stage (today's completed visits) ───────────────────────────
-  const todayCompleted = weekVisits.filter(v => (v.registered_at as string).startsWith(todayStr) && v.status === "completed") as any[];
-  const waitData = [
-    { stage: "Triage",       avgMin: Math.round(avgMin(todayCompleted.map(v => [v.registered_at, v.triage_started_at]))) },
-    { stage: "Consultation", avgMin: Math.round(avgMin(todayCompleted.map(v => [v.triage_started_at, v.consultation_started_at]))) },
-    { stage: "Pharmacy",     avgMin: Math.round(avgMin(todayCompleted.map(v => [v.consultation_started_at, v.pharmacy_sent_at]))) },
-    { stage: "Completion",   avgMin: Math.round(avgMin(todayCompleted.map(v => [v.pharmacy_sent_at, v.completed_at]))) },
-  ];
+  // ── Per-visit stage breakdown (today's completed) ──────────────────────────
+  type BreakdownRow = {
+    visit_number: string;
+    patient_name: string;
+    wait_triage:   number | null;
+    wait_consult:  number | null;
+    wait_pharmacy: number | null;
+    wait_complete: number | null;
+    total:         number | null;
+  };
+  const visitBreakdown: BreakdownRow[] = breakdown.map(v => ({
+    visit_number:  v.visit_number,
+    patient_name:  (v.patients as any)?.full_name ?? "—",
+    wait_triage:   diffMin(v.registered_at,          v.triage_started_at),
+    wait_consult:  diffMin(v.triage_started_at,      v.consultation_started_at),
+    wait_pharmacy: diffMin(v.consultation_started_at, v.pharmacy_sent_at),
+    wait_complete: diffMin(v.pharmacy_sent_at,        v.completed_at),
+    total:         diffMin(v.registered_at,           v.completed_at),
+  }));
 
   const summaryCards = [
-    { label: "Patients Today",      value: totalToday,        sub: `${activeNow} still active`,     color: "text-on-surface",  bar: "bg-primary" },
-    { label: "Completion Rate",     value: `${completionRate}%`, sub: `${completedToday} completed`, color: completionRate >= 80 ? "text-emerald-700" : "text-amber-700", bar: completionRate >= 80 ? "bg-emerald-500" : "bg-amber-500" },
-    { label: "Avg Visit Duration",  value: avgVisitMin > 0 ? `${avgVisitMin}m` : "—", sub: "per completed visit", color: "text-on-surface", bar: "bg-secondary" },
-    { label: "Week Total",          value: weekTotal,          sub: `${weekCompleted} completed`,    color: "text-on-surface",  bar: "bg-teal" },
-    { label: "Emergency Today",     value: emergencyToday,     sub: "high-priority visits",          color: emergencyToday > 0 ? "text-red-700" : "text-emerald-700", bar: emergencyToday > 0 ? "bg-red-500" : "bg-emerald-500" },
-    { label: "Low Stock Items",     value: lowStockCount,      sub: "below reorder level",           color: lowStockCount > 0 ? "text-amber-700" : "text-emerald-700", bar: lowStockCount > 0 ? "bg-amber-500" : "bg-emerald-500" },
+    { label: "Patients Today",     value: totalToday,                                     sub: `${activeNow} still active`,        color: "text-on-surface",          bar: "bg-primary" },
+    { label: "Completion Rate",    value: `${completionRate}%`,                           sub: `${completedToday} completed`,      color: completionRate >= 80 ? "text-emerald-700" : "text-amber-700", bar: completionRate >= 80 ? "bg-emerald-500" : "bg-amber-500" },
+    { label: "Avg Visit Duration", value: avgVisitMin > 0 ? `${avgVisitMin}m` : "—",     sub: "per completed visit",              color: "text-on-surface",          bar: "bg-secondary" },
+    { label: "Week Total",         value: weekTotal,                                      sub: `${weekCompleted} completed`,       color: "text-on-surface",          bar: "bg-teal" },
+    { label: "Emergency Today",    value: emergencyToday,                                 sub: "high-priority visits",             color: emergencyToday > 0 ? "text-red-700" : "text-emerald-700", bar: emergencyToday > 0 ? "bg-red-500" : "bg-emerald-500" },
+    { label: "Low Stock Items",    value: lowStockCount,                                  sub: "below reorder level",              color: lowStockCount > 0 ? "text-amber-700" : "text-emerald-700", bar: lowStockCount > 0 ? "bg-amber-500" : "bg-emerald-500" },
   ];
 
   return (
@@ -165,12 +184,77 @@ export default async function AnalyticsPage() {
       </div>
 
       {/* Charts */}
-      <AnalyticsCharts
-        weeklyData={weeklyData}
-        stageData={stageData}
-        typeData={typeData}
-        waitData={waitData}
-      />
+      <AnalyticsCharts weeklyData={weeklyData} stageData={stageData} typeData={typeData} />
+
+      {/* Per-visit exact time breakdown */}
+      <div className="rounded-lg border border-outline-variant bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-outline-variant flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-on-surface">Today's Visit Time Breakdown</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">Exact minutes spent at each stage (today's completed visits)</p>
+          </div>
+          <span className="text-xs text-on-surface-variant bg-surface-container px-2.5 py-1 rounded-full ring-1 ring-outline-variant">
+            {visitBreakdown.length} completed
+          </span>
+        </div>
+
+        {visitBreakdown.length === 0 ? (
+          <div className="p-8 text-center text-sm text-on-surface-variant">
+            No completed visits yet today. Data will appear as patients complete their journey.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-container-low border-b border-outline-variant">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Visit #</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Patient</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Wait→Triage</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Triage→Consult</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Consult→Pharmacy</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Pharmacy→Done</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-on-surface-variant uppercase tracking-wider whitespace-nowrap">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant">
+                {visitBreakdown.map(v => (
+                  <tr key={v.visit_number} className="hover:bg-surface-container-low transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-on-surface-variant">{v.visit_number}</td>
+                    <td className="px-4 py-3 text-on-surface font-medium">{v.patient_name}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-on-surface">{fmtMin(v.wait_triage)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-on-surface">{fmtMin(v.wait_consult)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-on-surface">{fmtMin(v.wait_pharmacy)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-on-surface">{fmtMin(v.wait_complete)}</td>
+                    <td className={`px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums ${
+                      v.total !== null && v.total > 120 ? "text-red-700" : v.total !== null && v.total > 60 ? "text-amber-700" : "text-emerald-700"
+                    }`}>
+                      {fmtMin(v.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {visitBreakdown.length > 1 && (() => {
+                const avg = (vals: (number | null)[]) => {
+                  const v = vals.filter(x => x !== null) as number[];
+                  return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
+                };
+                return (
+                  <tfoot>
+                    <tr className="border-t-2 border-outline-variant bg-surface-container-low">
+                      <td colSpan={2} className="px-4 py-3 text-xs font-semibold text-on-surface-variant">Average</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums text-on-surface">{fmtMin(avg(visitBreakdown.map(v => v.wait_triage)))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums text-on-surface">{fmtMin(avg(visitBreakdown.map(v => v.wait_consult)))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums text-on-surface">{fmtMin(avg(visitBreakdown.map(v => v.wait_pharmacy)))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums text-on-surface">{fmtMin(avg(visitBreakdown.map(v => v.wait_complete)))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold tabular-nums text-on-surface">{fmtMin(avg(visitBreakdown.map(v => v.total)))}</td>
+                    </tr>
+                  </tfoot>
+                );
+              })()}
+            </table>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

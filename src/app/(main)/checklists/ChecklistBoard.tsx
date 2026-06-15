@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { ChecklistItem } from "@/lib/supabase/types";
+import type { ChecklistItem, ChecklistTemplateRow } from "@/lib/supabase/types";
 import { startChecklist, saveChecklistProgress, submitChecklist } from "@/app/actions/checklists";
 
 interface ChecklistRow {
@@ -12,124 +12,71 @@ interface ChecklistRow {
   items: ChecklistItem[];
   notes: string | null;
   completed_at: string | null;
+  template_id: string | null;
 }
-
-interface Template {
-  key: string;
-  label: string;
-  shift: string;
-  description: string;
-  items: ChecklistItem[];
-}
-
-const TEMPLATES: Template[] = [
-  {
-    key: "morning_safety",
-    label: "Morning Safety Rounds",
-    shift: "morning",
-    description: "Verify facility safety before first patient",
-    items: [
-      { id: "ms1", text: "Emergency exits are clear and unobstructed",            required: true,  checked: false },
-      { id: "ms2", text: "Emergency shower and eyewash stations tested",          required: true,  checked: false },
-      { id: "ms3", text: "First aid kits fully stocked and accessible",           required: true,  checked: false },
-      { id: "ms4", text: "AED battery indicator is green",                        required: true,  checked: false },
-      { id: "ms5", text: "Oxygen cylinder levels sufficient (>50%)",              required: true,  checked: false },
-      { id: "ms6", text: "All consultation rooms clean and prepared",             required: false, checked: false },
-      { id: "ms7", text: "Reception area ready for patient check-in",             required: false, checked: false },
-    ],
-  },
-  {
-    key: "medication_check",
-    label: "Medication Stock Check",
-    shift: "morning",
-    description: "Verify pharmacy stock and controlled substances",
-    items: [
-      { id: "mc1", text: "Controlled substances count matches register",          required: true,  checked: false },
-      { id: "mc2", text: "Medication refrigerator temperature 2–8°C confirmed",   required: true,  checked: false },
-      { id: "mc3", text: "No expired medications on dispensing shelf",            required: true,  checked: false },
-      { id: "mc4", text: "Dispensing trays restocked as needed",                  required: false, checked: false },
-      { id: "mc5", text: "Items below reorder level logged in system",            required: true,  checked: false },
-      { id: "mc6", text: "Prescription log from previous shift reviewed",         required: true,  checked: false },
-    ],
-  },
-  {
-    key: "equipment_check",
-    label: "Equipment & Devices Check",
-    shift: "morning",
-    description: "Confirm all clinical equipment is operational",
-    items: [
-      { id: "ec1", text: "ECG machine powered on and calibration verified",       required: true,  checked: false },
-      { id: "ec2", text: "Audiometer calibration sticker current",                required: true,  checked: false },
-      { id: "ec3", text: "Spirometer mouthpieces stocked and clean",              required: true,  checked: false },
-      { id: "ec4", text: "Blood pressure machines tested and functional",         required: true,  checked: false },
-      { id: "ec5", text: "Glucometers have adequate test strips",                  required: true,  checked: false },
-      { id: "ec6", text: "Vision testing charts undamaged and in position",       required: false, checked: false },
-    ],
-  },
-  {
-    key: "lab_qc",
-    label: "Lab Quality Control",
-    shift: "morning",
-    description: "Run QC before processing patient specimens",
-    items: [
-      { id: "lq1", text: "QC sample run before first patient specimen",           required: true,  checked: false },
-      { id: "lq2", text: "QC results within acceptable range — logged",           required: true,  checked: false },
-      { id: "lq3", text: "Reagent expiry dates checked",                          required: true,  checked: false },
-      { id: "lq4", text: "Cold chain integrity confirmed for samples",            required: true,  checked: false },
-      { id: "lq5", text: "Centrifuge calibration verified",                       required: false, checked: false },
-      { id: "lq6", text: "Biohazard waste disposal bags available",               required: true,  checked: false },
-    ],
-  },
-  {
-    key: "eod_check",
-    label: "End of Day Check",
-    shift: "afternoon",
-    description: "Secure facility and prepare for next shift",
-    items: [
-      { id: "eod1", text: "All patient files returned and securely stored",       required: true,  checked: false },
-      { id: "eod2", text: "Outstanding lab results reviewed and actioned",        required: true,  checked: false },
-      { id: "eod3", text: "Consultation rooms cleaned and locked",                required: true,  checked: false },
-      { id: "eod4", text: "Medications secured in pharmacy/drug cupboard",        required: true,  checked: false },
-      { id: "eod5", text: "Biohazard waste correctly disposed",                   required: true,  checked: false },
-      { id: "eod6", text: "Handover notes completed for incoming shift",          required: false, checked: false },
-      { id: "eod7", text: "Alarm system activated before leaving",                required: true,  checked: false },
-    ],
-  },
-];
 
 const STATUS_META = {
-  pending:               { label: "Not Started",     color: "text-on-surface-variant", bg: "bg-surface-container",   dot: "bg-outline" },
-  in_progress:           { label: "In Progress",     color: "text-amber-700",          bg: "bg-amber-50",            dot: "bg-amber-500" },
-  completed:             { label: "Completed",        color: "text-emerald-700",        bg: "bg-emerald-50",          dot: "bg-emerald-500" },
-  completed_with_issues: { label: "Issues Noted",    color: "text-orange-700",         bg: "bg-orange-50",           dot: "bg-orange-500" },
+  pending:               { label: "Not Started",  color: "text-on-surface-variant", bg: "bg-surface-container",  dot: "bg-outline" },
+  in_progress:           { label: "In Progress",  color: "text-amber-700",          bg: "bg-amber-50",           dot: "bg-amber-500" },
+  completed:             { label: "Completed",     color: "text-emerald-700",        bg: "bg-emerald-50",         dot: "bg-emerald-500" },
+  completed_with_issues: { label: "Issues Noted", color: "text-orange-700",         bg: "bg-orange-50",          dot: "bg-orange-500" },
 };
+
+function detectShift(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "morning";
+  if (h < 17) return "afternoon";
+  return "night";
+}
 
 interface Props {
   existingChecklists: ChecklistRow[];
+  templates: ChecklistTemplateRow[];
 }
 
-export default function ChecklistBoard({ existingChecklists }: Props) {
-  const [activeChecklist, setActiveChecklist] = useState<{ id: string; template: Template; items: ChecklistItem[]; notes: string } | null>(null);
+export default function ChecklistBoard({ existingChecklists, templates }: Props) {
+  const [activeChecklist, setActiveChecklist] = useState<{
+    id: string;
+    templateName: string;
+    templateDescription: string | null;
+    items: ChecklistItem[];
+    notes: string;
+  } | null>(null);
   const [viewCompleted, setViewCompleted] = useState<ChecklistRow | null>(null);
   const [isPending, startTransition] = useTransition();
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function findExisting(templateKey: string) {
-    return existingChecklists.find(c => c.checklist_type === templateKey);
+  function findExisting(templateId: string) {
+    return existingChecklists.find(c => c.template_id === templateId);
   }
 
-  function handleStart(template: Template) {
+  function handleStart(template: ChecklistTemplateRow) {
     setError(null);
-    const existing = findExisting(template.key);
+    const existing = findExisting(template.id);
     if (existing?.status === "in_progress") {
-      setActiveChecklist({ id: existing.id, template, items: existing.items, notes: existing.notes ?? "" });
+      setActiveChecklist({
+        id: existing.id,
+        templateName: template.name,
+        templateDescription: template.description,
+        items: existing.items,
+        notes: existing.notes ?? "",
+      });
       return;
     }
     startTransition(async () => {
       try {
-        const { id } = await startChecklist({ checklistType: template.key, shiftType: template.shift, items: template.items });
-        setActiveChecklist({ id, template, items: template.items, notes: "" });
+        const { id } = await startChecklist({ templateId: template.id, shiftType: detectShift() });
+        // Re-fetch items from the existing checklist by re-reading local state — the server has them now
+        // The page will revalidate; for immediate UX use the template items as initial state
+        const rawItems = template.items as { text: string; required: boolean }[];
+        const items: ChecklistItem[] = rawItems.map((it, idx) => ({
+          id: `${template.id}-${idx}`,
+          text: it.text,
+          required: it.required,
+          checked: false,
+        }));
+        setActiveChecklist({ id, templateName: template.name, templateDescription: template.description, items, notes: "" });
       } catch (err: any) {
         setError(err.message ?? "Failed to start checklist");
       }
@@ -144,7 +91,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
     } : null);
   }
 
-  function setItemNotes(itemId: string, notes: string) {
+  function setItemNote(itemId: string, notes: string) {
     if (!activeChecklist) return;
     setActiveChecklist(prev => prev ? {
       ...prev,
@@ -177,16 +124,15 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
     });
   }
 
-  const checkedCount = activeChecklist?.items.filter(i => i.checked).length ?? 0;
-  const requiredCount = activeChecklist?.items.filter(i => i.required).length ?? 0;
+  const checkedCount    = activeChecklist?.items.filter(i => i.checked).length ?? 0;
+  const requiredCount   = activeChecklist?.items.filter(i => i.required).length ?? 0;
   const requiredChecked = activeChecklist?.items.filter(i => i.required && i.checked).length ?? 0;
-  const progress = activeChecklist ? Math.round((checkedCount / activeChecklist.items.length) * 100) : 0;
+  const progress        = activeChecklist ? Math.round((checkedCount / activeChecklist.items.length) * 100) : 0;
 
   // ── Active checklist view ──────────────────────────────────────────────────
   if (activeChecklist) {
     return (
       <div className="space-y-5">
-        {/* Header bar */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <button
@@ -198,8 +144,10 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
               </svg>
             </button>
             <div>
-              <h2 className="text-base font-semibold text-on-surface">{activeChecklist.template.label}</h2>
-              <p className="text-xs text-on-surface-variant">{activeChecklist.template.description}</p>
+              <h2 className="text-base font-semibold text-on-surface">{activeChecklist.templateName}</h2>
+              {activeChecklist.templateDescription && (
+                <p className="text-xs text-on-surface-variant">{activeChecklist.templateDescription}</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -216,7 +164,6 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
 
         {error && <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
 
-        {/* Progress bar */}
         <div className="rounded-lg border border-outline-variant bg-white p-4">
           <div className="flex items-center justify-between text-xs text-on-surface-variant mb-2">
             <span>{checkedCount} of {activeChecklist.items.length} items checked</span>
@@ -227,7 +174,6 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
           </div>
         </div>
 
-        {/* Checklist items */}
         <div className="rounded-lg border border-outline-variant bg-white divide-y divide-outline-variant/50 overflow-hidden">
           {activeChecklist.items.map(item => (
             <div key={item.id} className={`p-4 transition-colors ${item.checked ? "bg-emerald-50/30" : ""}`}>
@@ -235,9 +181,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
                 <button
                   onClick={() => toggleItem(item.id)}
                   className={`mt-0.5 w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center transition-colors ${
-                    item.checked
-                      ? "bg-emerald-500 border-emerald-500 text-white"
-                      : "border-outline hover:border-primary"
+                    item.checked ? "bg-emerald-500 border-emerald-500 text-white" : "border-outline hover:border-primary"
                   }`}
                 >
                   {item.checked && (
@@ -254,7 +198,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
                   <input
                     type="text"
                     value={item.notes ?? ""}
-                    onChange={e => setItemNotes(item.id, e.target.value)}
+                    onChange={e => setItemNote(item.id, e.target.value)}
                     placeholder="Add note (optional)…"
                     className="mt-1.5 w-full text-xs px-2 py-1.5 rounded border border-outline-variant/50 bg-white placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary"
                   />
@@ -264,7 +208,6 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
           ))}
         </div>
 
-        {/* Completion notes */}
         <div className="rounded-lg border border-outline-variant bg-white p-4">
           <label className="block text-xs font-semibold text-on-surface-variant mb-1.5">Completion Notes / Handover Comments</label>
           <textarea
@@ -276,7 +219,6 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
           />
         </div>
 
-        {/* Submit */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-xs text-on-surface-variant">
             {requiredChecked < requiredCount
@@ -295,9 +237,10 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
     );
   }
 
-  // ── Completed checklist view (read-only) ────────────────────────────────────
+  // ── Completed checklist read-only view ─────────────────────────────────────
   if (viewCompleted) {
     const meta = STATUS_META[viewCompleted.status];
+    const tmpl = templates.find(t => t.id === viewCompleted.template_id);
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3">
@@ -308,7 +251,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
           </button>
           <div>
             <h2 className="text-base font-semibold text-on-surface">
-              {TEMPLATES.find(t => t.key === viewCompleted.checklist_type)?.label ?? viewCompleted.checklist_type}
+              {tmpl?.name ?? viewCompleted.checklist_type}
             </h2>
             <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${meta.color}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />{meta.label}
@@ -318,7 +261,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
 
         <div className="rounded-lg border border-outline-variant bg-white divide-y divide-outline-variant/50 overflow-hidden">
           {viewCompleted.items.map(item => (
-            <div key={item.id} className={`px-4 py-3 flex items-start gap-3 ${item.checked ? "" : "bg-orange-50/30"}`}>
+            <div key={item.id} className={`px-4 py-3 flex items-start gap-3 ${!item.checked && item.required ? "bg-orange-50/30" : ""}`}>
               <div className={`mt-0.5 w-4 h-4 shrink-0 rounded border-2 flex items-center justify-center ${item.checked ? "bg-emerald-500 border-emerald-500 text-white" : "border-red-400"}`}>
                 {item.checked && (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="w-2.5 h-2.5">
@@ -348,24 +291,35 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
   }
 
   // ── Template grid (default view) ─────────────────────────────────────────
+  if (!templates.length) {
+    return (
+      <div className="rounded-lg border border-outline-variant bg-white p-8 text-center text-sm text-on-surface-variant shadow-sm">
+        No active checklist templates. Ask a manager to create templates in the Templates section.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {error && <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {TEMPLATES.map(template => {
-          const existing = findExisting(template.key);
-          const status = existing?.status ?? "pending";
-          const meta = STATUS_META[status];
+        {templates.map(template => {
+          const existing = findExisting(template.id);
+          const status   = existing?.status ?? "pending";
+          const meta     = STATUS_META[status];
           const completedCount = existing?.items.filter(i => i.checked).length ?? 0;
-          const totalCount = existing ? existing.items.length : template.items.length;
+          const totalCount     = existing ? existing.items.length : (template.items as any[]).length;
 
           return (
-            <div key={template.key} className="rounded-lg border border-outline-variant bg-white p-5 shadow-sm flex flex-col gap-4">
+            <div key={template.id} className="rounded-lg border border-outline-variant bg-white p-5 shadow-sm flex flex-col gap-4">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-on-surface">{template.label}</p>
-                  <p className="text-xs text-on-surface-variant mt-0.5">{template.description}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-on-surface">{template.name}</p>
+                  {template.description && (
+                    <p className="text-xs text-on-surface-variant mt-0.5">{template.description}</p>
+                  )}
+                  <p className="text-xs text-on-surface-variant mt-1 capitalize">{template.category} · {template.shift_type === "any" ? "Any shift" : template.shift_type}</p>
                 </div>
                 <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${meta.bg} ${meta.color}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
@@ -384,14 +338,14 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
                   <div className="h-1.5 bg-surface-container rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${status === "completed" ? "bg-emerald-500" : status === "completed_with_issues" ? "bg-orange-500" : "bg-primary"}`}
-                      style={{ width: `${Math.round((completedCount / totalCount) * 100)}%` }}
+                      style={{ width: `${totalCount ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
                     />
                   </div>
                 </div>
               )}
 
               <div className="flex items-center gap-2 mt-auto">
-                {(status === "pending") && (
+                {status === "pending" && (
                   <button
                     onClick={() => handleStart(template)}
                     disabled={isPending}
@@ -424,7 +378,7 @@ export default function ChecklistBoard({ existingChecklists }: Props) {
       </div>
 
       <p className="text-xs text-on-surface-variant">
-        * Checklists marked with issues are flagged for review. Required items must be checked for a clean completion.
+        * Required items must be checked for a clean completion. Unchecked required items are flagged as issues.
       </p>
     </div>
   );
